@@ -2,7 +2,23 @@
 
 基于 **wxauto4**（Windows UI 自动化）+ **OpenAI 兼容接口** 的微信群聊/私聊智能体。
 支持多场景独立记忆、角色扮演、主动互动与群静默接话，不受网页协议限制，
-任何可登录 PC 微信（4.x）的账号均可使用。
+任何可登录 PC 微信（4.x）的账号均可使用。另附**网页 AI 聊天模块**，
+无需微信即可在浏览器中与同一套角色卡对话。
+
+## 目录
+
+- [功能特性](#功能特性)
+- [架构概览](#架构概览)
+- [环境要求](#环境要求)
+- [快速开始（安装与使用）](#快速开始)
+- [配置指南](#配置指南)
+- [使用指南](#使用指南)
+- [Web 管理后台使用](#web-管理后台使用)
+- [目录结构](#目录结构)
+- [测试](#测试)
+- [常见问题解答（FAQ）](#常见问题解答faq)
+- [贡献指南](#贡献指南)
+- [许可证](#许可证)
 
 ## 功能特性
 
@@ -76,6 +92,20 @@
 
 - **零侵入**：Dashboard 在守护线程中运行，默认关闭，不影响机器人主循环；所有 API 只读
 
+### 网页 AI 聊天模块
+
+- **独立于微信链路**：浏览器直接与 AI 对话，无需启动 main.py / 微信客户端，也可随 Dashboard 一起挂载
+
+- **复用人设卡**：与微信端共用 `roles` 配置（中英文键名 JSON 卡 + 身份保护指令），网页端可快速切换角色
+
+- **思考过程可视化**：模型思考内容与正式回答分离返回，思考内容仅在网页"思考过程"展示块中呈现，**永远不会进入微信发送链路**
+
+- **会话管理**：session_id 隔离、线程安全、多轮上下文；页面刷新后可从客户端恢复历史，AI 记忆不丢
+
+- **每张人设卡独立历史**：前端以 localStorage 按角色卡分别保存聊天记录（纯原生 JS，无 CDN 依赖）
+
+- 详细接口文档见 [docs/chat-module-api.md](docs/chat-module-api.md)，使用与测试报告见 [docs/chat-module-guide.md](docs/chat-module-guide.md)
+
 ## 架构概览
 
 ```
@@ -145,7 +175,16 @@
    python .\main.py
    ```
 
-4. **强烈建议：在微信中双击白名单群聊，打开独立聊天窗口**
+4. **（可选）仅使用网页 AI 聊天（不连微信）**
+
+   ```powershell
+   python .\chat_server.py          # 使用 config.yaml
+   python .\chat_server.py my.yaml  # 指定配置文件
+   ```
+
+   浏览器访问 `http://127.0.0.1:8051/chat.html` 即可开始聊天（端口由 `dashboard.chat_port` 配置）。
+
+5. **强烈建议：在微信中双击白名单群聊，打开独立聊天窗口**
 
    - 有独立窗口：机器人直接轮询该窗口，不干扰主窗口正常使用，
      消息归属、发送可靠性、响应速度均最优
@@ -153,7 +192,7 @@
    - 无独立窗口：机器人轮换切换主窗口拉取/发送消息（已做互斥锁与身份校验），
      但仍建议不要同时手动操作微信主窗口
 
-## 配置说明
+## 配置指南
 
 ### 触发规则（trigger）
 
@@ -183,6 +222,8 @@
 | 配置                               | 说明                                           |
 | -------------------------------- | -------------------------------------------- |
 | `base_url` / `api_key` / `model` | OpenAI 兼容接口信息（OpenAI/DeepSeek/本地代理/ollama 等） |
+| `disable_thinking`               | 请求层携带多协议关闭思考参数 + 响应层清洗思考内容（默认开）              |
+| `cot_refine`                     | 命中思考内容时二次提炼出最终回答复用，提炼失败才作废重试                 |
 | `max_context_rounds`             | 每会话保留的最大对话轮数                                 |
 | `context_max_age`                | 上下文时间边界（秒），更早的历史不再带入 AI                      |
 | `request_interval`               | 两次 AI 请求最小间隔（秒）                              |
@@ -216,6 +257,7 @@
 | `enabled`   | 是否启用 Dashboard（默认 `false`，在守护线程中运行不影响主循环） |
 | `host`      | 监听地址（`127.0.0.1` 仅本机访问；`0.0.0.0` 允许局域网访问） |
 | `port`      | 端口（默认 `8050`）                             |
+| `chat_port` | 网页 AI 聊天独立入口端口（默认 `8051`，仅 chat_server.py 使用） |
 | `log_lines` | 日志 API 返回的最近行数（默认 `200`）                  |
 
 ## 使用指南
@@ -290,12 +332,13 @@ python .\main.py
 | 角色卡管理 | 已配置角色卡展示（名称/来源/默认标记），支持内联与 JSON 文件两种来源            | 手动刷新  |
 | 触发规则  | 当前触发配置只读展示：关键词列表、模糊匹配开关、相似度阈值等                    | 手动刷新  |
 | 主动互动  | 当前主动互动配置：模式（keyword/context/hybrid）、发言间隔、频率上限     | 手动刷新  |
+| AI 聊天 | 网页 AI 聊天：人设卡切换、多轮对话、思考过程展示块（独立 localStorage 历史）   | 实时    |
 | 日志监控  | 实时日志流（按 INFO/WARN/ERROR/TASK 着色），发送队列/场景状态/系统健康面板 | 3 秒自动 |
 | 布局方案  | 三种界面布局方案对比：经典侧边栏/顶部导航卡片/双栏分区，含优缺点分析               | 静态    |
 
 ### REST API
 
-所有 API 为只读，不修改运行时状态：
+Dashboard API 均为只读，不修改运行时状态：
 
 | 端点                  | 方法  | 说明                           |
 | ------------------- | --- | ---------------------------- |
@@ -306,17 +349,31 @@ python .\main.py
 | `/api/logs?lines=N` | GET | 最近 N 行日志（默认 200），每行含级别与时间戳   |
 | `/api/health`       | GET | 系统健康：CPU/内存占用、Python 版本、运行时长 |
 
+网页 AI 聊天 API（随 Dashboard 挂载或 chat_server.py 独立运行，均可用）：
+
+| 端点                      | 方法   | 说明                                    |
+| ----------------------- | ---- | ------------------------------------- |
+| `/api/chat/roles`       | GET  | 人设卡列表（含默认角色）                          |
+| `/api/chat/session`     | POST | 创建会话 `{role?, user?, history?}`，返回 session_id |
+| `/api/chat/send`        | POST | 发送消息 `{session_id, message}`，返回回复与思考内容 |
+| `/api/chat/history`     | GET  | 查询会话历史 `?session_id=xxx`              |
+| `/api/chat/clear`       | POST | 清空会话上下文 `{session_id}`                |
+
 ### 技术架构
 
 - **后端**：Flask 3.x，在 `main.py` 的 `run_once()` 中以守护线程启动，与消息轮询主循环并行
 
-- **前端**：7 个静态 HTML 页面（Anodized Deep 深色主题），Tailwind CSS + Lucide 图标
+- **网页 AI 聊天后端**：`dashboard/chat_api.py`（Flask 蓝图），复用 RoleCards 与 AIBackend；
+  独立入口 `chat_server.py`（默认端口 8051），随 Dashboard 挂载时共享 8050 端口
 
-- **数据对接**：`dashboard-api.js` 在前端定时轮询 `/api/*` 端点，自动更新 DOM
+- **前端**：8 个静态 HTML 页面（Anodized Deep 深色主题），Tailwind CSS + Lucide 图标
+
+- **数据对接**：`dashboard-api.js` 在前端定时轮询 `/api/*` 端点自动更新 DOM；
+  聊天模块使用独立的 `chat-app.js / chat-store.js / chat-bus.js / chat-virtual-list.js`
 
 - **安全**：API Key 在 `/api/config` 中自动脱敏；默认仅监听 `127.0.0.1`
 
-- **依赖**：新增 `flask>=3.0`（Dashboard 关闭时无需安装）
+- **依赖**：新增 `flask>=3.0`（Dashboard 与聊天模块关闭时无需安装）
 
 ### 界面布局方案
 
@@ -331,8 +388,10 @@ Dashboard 提供三种布局方案对比（在"布局方案"页面查看完整�
 ```
 teda_bot/
 ├── main.py                # 入口：轮询主循环 + 线程池 + watchdog 自动重启 + 可选 Dashboard
+├── chat_server.py         # 网页 AI 聊天独立入口（不连微信，默认端口 8051）
 ├── config.yaml            # 本地配置（不入库），config.example.yaml 为模板
 ├── requirements.txt
+├── docs/                  # 模块文档（聊天 API 接口文档 / 使用与测试报告）
 ├── bot/
 │   ├── wechat_client.py   # wxauto4 封装：监听/发送/UI互斥锁/窗口身份校验
 │   ├── handler.py         # 消息管线：过滤→触发→AI→回复（场景锁/去重/限流）
@@ -340,8 +399,8 @@ teda_bot/
 │   ├── proactive.py       # 主动互动引擎：消息阈值/活跃度/群静默接话
 │   ├── memory_store.py    # 场景记忆持久化（原子写入 JSON）
 │   ├── matcher.py         # 关键词匹配 + @提及精准过滤
-│   ├── role_cards.py      # 角色卡系统（中英文键名兼容）
-│   ├── ai_backend.py      # OpenAI 兼容接口 + 多场景上下文管理
+│   ├── role_cards.py      # 角色卡系统（中英文键名兼容 + 身份保护指令）
+│   ├── ai_backend.py      # OpenAI 兼容接口 + 上下文管理 + 思考内容清洗/提炼
 │   ├── rate_limit.py      # 场景级频率限制
 │   ├── dedup.py           # 消息双保险去重
 │   ├── safety.py          # 敏感词过滤
@@ -349,19 +408,21 @@ teda_bot/
 ├── dashboard/             # Web 管理后台（Flask 守护线程）
 │   ├── __init__.py        # 包入口
 │   ├── state.py           # 线程安全的运行时状态容器
-│   └── server.py          # Flask 应用：页面托管 + REST API
+│   ├── server.py          # Flask 应用：页面托管 + REST API + 聊天蓝图挂载
+│   └── chat_api.py        # 网页 AI 聊天服务：会话管理 + 思考内容分离
 ├── tedabot-dashboard/     # 前端页面资源（Anodized Deep 深色主题）
-│   ├── pages/             # 7 个 HTML 页面
+│   ├── pages/             # 8 个 HTML 页面
 │   │   ├── dashboard.html # 仪表盘：KPI 总览 + 队列 + 场景 + 时间线
 │   │   ├── scenarios.html # 场景记忆：数据表 + 过滤
 │   │   ├── roles.html     # 角色卡管理：卡片网格
 │   │   ├── trigger.html   # 触发规则：分段配置表单
 │   │   ├── proactive.html # 主动互动：模式选择 + 阈值/频率配置
+│   │   ├── chat.html      # 网页 AI 聊天：人设卡切换 + 多轮对话
 │   │   ├── logs.html      # 日志监控：实时日志流 + 状态面板
 │   │   └── layouts.html   # 布局方案：三方案对比分析
-│   ├── assets/            # 前端 JS（dashboard-api.js 数据对接层）
+│   ├── assets/            # 前端 JS（dashboard-api.js 数据对接层 + chat-*.js 聊天模块）
 │   └── colors_and_type.css# Anodized Deep 设计令牌
-└── tests/                 # pytest 单元测试（160 项：139 业务 + 21 Dashboard）
+└── tests/                 # pytest 单元测试（194 项，含聊天 API 与思考内容防护测试）
 ```
 
 ## 测试
@@ -370,9 +431,35 @@ teda_bot/
 python -m pytest tests/ -v
 ```
 
-测试覆盖 160 项：139 项业务逻辑测试（消息处理/触发/记忆/队列/角色卡/安全等）+ 21 项 Dashboard 测试（API 端点/状态容器/工具方法）。
+测试覆盖 194 项：消息处理、触发匹配、场景记忆、发送队列、角色卡、安全过滤、主动互动、
+Dashboard API/状态容器，以及网页聊天 API（含思考内容分离与防护测试）。
 
-## 常见问题排查
+> 注：根目录 `test_logger.py` 是独立脚本（含 `sys.exit`），不纳入 pytest 收集，请始终用 `python -m pytest tests/` 运行。
+
+## 常见问题解答（FAQ）
+
+**Q：需要准备什么环境？**
+A：Windows 10/11 + Python 3.9~3.12 + 已登录的微信 PC 4.x 客户端（wxauto4 免费版最高支持 4.1.8.107）。仅使用网页 AI 聊天功能则无需微信。
+
+**Q：机器人不回复？**
+A：依次检查——群名/昵称与微信显示完全一致；消息是否含关键词或 @机器人；日志中有无「捕获消息」。私聊需 `reply_private: true`。
+
+**Q：回复里出现模型的思考内容？**
+A：保持 `ai.disable_thinking: true` 与 `cot_refine: true`；部分免费模型源（如 glm-4.6v/4.7-flash-free）无法在请求层关闭思考，依赖响应层清洗与二次提炼兜底。
+
+**Q：如何启用某个角色卡？**
+A：在 `config.yaml` 中将 `roles.default` 改为对应角色卡名（如 `yandere`）。网页聊天页可实时切换。
+
+**Q：网页聊天与微信回复共用记忆吗？**
+A：不共用。网页聊天会话独立（session_id 隔离 + 浏览器 localStorage），与微信场景记忆完全解耦；但共用同一份角色卡与 AI 接口配置。
+
+**Q：如何清空某个群的记忆？**
+A：删除 `memory/` 目录下对应场景的 JSON 文件（如 `group_某群.json`），重启后即从零开始。
+
+**Q：Dashboard 打不开？**
+A：确认 `dashboard.enabled: true`；`pip install flask`；检查端口占用。若仅想用网页聊天，直接运行 `python chat_server.py`（不依赖 main.py）。
+
+### 故障排查速查表
 
 | 现象              | 排查方向                                                                          |
 | --------------- | ----------------------------------------------------------------------------- |
@@ -386,6 +473,7 @@ python -m pytest tests/ -v
 | 程序反复重启          | 查看日志末尾异常栈；连续崩溃 10 次会自动停止                                                      |
 | Dashboard 无法访问  | 确认 `config.yaml` 中 `dashboard.enabled: true`；安装 `pip install flask`；检查端口是否被占用 |
 | Dashboard 数据不刷新 | 机器人需正常运行（非仅启动 Dashboard）；API 不可用时页面保留设计稿数据                                    |
+| 聊天页报「会话不存在」     | 服务重启后内存会话丢失，刷新页面重建会话；本地历史会自动恢复 AI 上下文                                         |
 
 ## 贡献指南
 
