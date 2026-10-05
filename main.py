@@ -42,8 +42,9 @@ def run_once(cfg: dict, log):
     contexts = ContextManager(ai_cfg.get("max_context_rounds", 8), store=store)
 
     # 场景级回复限流：所有回复路径（@回复/私聊回复/主动发言）共享同一冷却计时
+    # 私聊默认不设回复间隔（0 = 不限制），群聊保留防刷屏冷却
     ri = cfg.get("reply_interval") or {}
-    throttle = ScenarioThrottle(ri.get("private", 30), ri.get("group", 60))
+    throttle = ScenarioThrottle(ri.get("private", 0), ri.get("group", 60))
 
     handler = MessageHandler(cfg, ai, contexts, throttle=throttle)
     client = WeChatClient(cfg)

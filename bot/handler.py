@@ -50,10 +50,10 @@ class MessageHandler:
         # 主动互动模式：context 模式下关键词不再触发直接回复（@机器人仍回复）
         self.proactive_mode = str((cfg.get("proactive") or {}).get("mode", "keyword")).lower()
         self.limiter = RateLimiter((cfg.get("ai") or {}).get("request_interval", 2.0))
-        # 每场景最小回复间隔（防刷屏）：私聊/群聊分别可配置
+        # 每场景最小回复间隔（防刷屏）：私聊默认 0 不限制，群聊可配置
         ri = cfg.get("reply_interval") or {}
         self.throttle = throttle or ScenarioThrottle(
-            ri.get("private", 30), ri.get("group", 60)
+            ri.get("private", 0), ri.get("group", 60)
         )
         # 每个场景最近发出的回复（用于重复发送检测）
         self._recent_replies: dict = {}
